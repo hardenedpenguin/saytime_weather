@@ -1,3 +1,26 @@
+saytime-weather (2.7.5) unstable; urgency=medium
+
+  * CODE CLEANUP: Improved code organization and maintainability
+    - Fixed function definition order (moved helper functions before use)
+    - Removed unused write_temperature function
+    - Simplified error handling patterns throughout
+    - Removed unnecessary eval blocks for simple operations
+  * CODE REFACTORING: Better code structure
+    - Cleaned up format_number function (removed redundant checks)
+    - Improved get_current_time function (simplified timezone handling)
+    - Replaced shell commands with safer Perl file operations
+    - Removed redundant variable initializations
+  * SECURITY: Improved file operations
+    - Replaced system("cat ...") with Perl file operations in create_output_file
+    - Better error handling for file operations
+  * MAINTENANCE: Code quality improvements
+    - Removed dead code and unused functions
+    - Simplified complex conditionals
+    - Better code organization and consistency
+    - Fixed function organization issues
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Mon, 13 Jan 2025 12:00:00 -0500
+
 saytime-weather (2.7.4) unstable; urgency=medium
 
   * NEW FEATURE: Added ICAO airport code support with METAR weather data

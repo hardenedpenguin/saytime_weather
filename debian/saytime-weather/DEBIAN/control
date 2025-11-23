@@ -1,27 +1,12 @@
-Source: saytime-weather
+Package: saytime-weather
+Version: 2.7.5
+Architecture: all
+Maintainer: Jory A. Pratt <geekypenguin@gmail.com>
+Installed-Size: 294
+Depends: perl:any, libdatetime-perl, libdatetime-timezone-perl, libwww-perl, libcache-cache-perl, libjson-perl, libconfig-simple-perl, liblog-log4perl-perl, perl
 Section: hamradio
 Priority: optional
-Maintainer: Jory A. Pratt <geekypenguin@gmail.com>
-Build-Depends: debhelper-compat (= 13),
-               libjson-perl,
-               libconfig-simple-perl,
-               liblog-log4perl-perl
-Standards-Version: 4.6.2
 Homepage: https://github.com/w5gle/saytime-weather
-Rules-Requires-Root: no
-
-Package: saytime-weather
-Architecture: all
-Depends: ${perl:Depends},
-         ${misc:Depends},
-         libdatetime-perl,
-         libdatetime-timezone-perl,
-         libwww-perl,
-         libcache-cache-perl,
-         libjson-perl,
-         libconfig-simple-perl,
-         liblog-log4perl-perl,
-         perl
 Description: Time and weather announcement scripts for Asterisk
  Scripts to announce time and weather conditions through Asterisk.
  Uses free Open-Meteo API for worldwide weather data with automatic
@@ -38,4 +23,4 @@ Description: Time and weather announcement scripts for Asterisk
   * Comprehensive logging (quiet by default, verbose with -v)
   * Custom sound directory support for audio files
   * Zero configuration required - works out of the box!
-  * Clean, well-organized codebase with consistent patterns 
+  * Clean, well-organized codebase with consistent patterns

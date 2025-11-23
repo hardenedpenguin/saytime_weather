@@ -2,7 +2,7 @@
 
 A comprehensive time and weather announcement system for Asterisk PBX, designed specifically for radio systems, repeater controllers, and amateur radio applications. This system provides automated voice announcements of current time and weather conditions using high-quality synthesized speech.
 
-**Version 2.7.4** - Major feature release! ICAO airport support, command line overrides, and day/night detection!
+**Version 2.7.5** - Code cleanup and refactoring release! Improved maintainability, better error handling, and code organization improvements.
 
 ## 🚀 Features
 
@@ -18,7 +18,7 @@ A comprehensive time and weather announcement system for Asterisk PBX, designed 
 - **Comprehensive Logging**: Quiet by default, detailed with verbose flag
 - **Caching System**: Intelligent caching (30 min default) for fast repeated lookups
 - **Free Weather APIs**: Open-Meteo (weather) + Nominatim (geocoding) - both free forever
-- **Simplified Code**: 23% code reduction from v2.6.6 for better maintainability
+- **Clean Codebase**: Well-organized, maintainable code with consistent patterns
 
 ## 📋 Requirements
 
@@ -31,7 +31,7 @@ A comprehensive time and weather announcement system for Asterisk PBX, designed 
   - `Log::Log4perl` (Logging)
   - `Cache::FileCache` (Caching)
 - **Internet Connection** for weather API access
-- **No API Keys Required!** - Works immediately after installation
+- **No API Keys Required** - Works immediately after installation
 
 ## 🛠️ Installation
 
@@ -40,12 +40,12 @@ A comprehensive time and weather announcement system for Asterisk PBX, designed 
 1. **Download the latest release**:
    ```bash
    cd /tmp
-   wget https://github.com/hardenedpenguin/saytime_weather/releases/download/v2.7.4/saytime-weather_2.7.4_all.deb
+   wget https://github.com/w5gle/saytime-weather/releases/download/v2.7.5/saytime-weather_2.7.5_all.deb
    ```
 
 2. **Install the package**:
    ```bash
-   sudo apt install ./saytime-weather_2.7.4_all.deb
+   sudo apt install ./saytime-weather_2.7.5_all.deb
    ```
 
    This will automatically:
@@ -53,15 +53,14 @@ A comprehensive time and weather announcement system for Asterisk PBX, designed 
    - Set up the system directories
    - Install sound files
    - Create configuration with sensible defaults
-   - **No API keys needed** - works immediately!
 
 ## ⚙️ Configuration
 
-### Weather Configuration (Optional!)
+### Weather Configuration
 
-The system works out of the box with sensible defaults. Configuration is **optional**.
+The system works out of the box with sensible defaults. Configuration is **optional** and the config file is auto-created on first run.
 
-Edit `/etc/asterisk/local/weather.ini` (auto-created on first run):
+Edit `/etc/asterisk/local/weather.ini`:
 
 ```ini
 [weather]
@@ -80,7 +79,19 @@ cache_enabled = YES
 cache_duration = 1800                   ; 30 minutes in seconds
 ```
 
-**That's it!** No API keys required.
+**That's it!** The system works immediately with sensible defaults.
+
+## 📝 Changelog
+
+### What Changed in v2.7.5?
+
+**New in 2.7.5 - Code Cleanup Release:**
+- 🧹 **Code Refactoring** - Improved code organization and maintainability
+- 🔧 **Better Error Handling** - Simplified error handling patterns throughout
+- 🗑️ **Removed Dead Code** - Eliminated unused functions and redundant checks
+- 🔒 **Security Improvements** - Replaced shell commands with safer Perl file operations
+- 📦 **Function Organization** - Fixed function definition order for better clarity
+- ✨ **Code Simplification** - Cleaned up complex conditionals and redundant logic
 
 ### What Changed in v2.7.4?
 
@@ -356,7 +367,7 @@ exten => 5678,3,Hangup()
 
 ### Special Remote Locations (50+)
 
-**NEW in v2.7.4**: Support for remote locations without postal codes!
+Support for remote locations without postal codes!
 
 Perfect for DXpeditions, research stations, and extreme locations:
 
@@ -388,7 +399,7 @@ weather.pl SOUTHPOLE v    # South Pole Station, Antarctica
 
 ### Timezone Feature
 
-**New in v2.7.0**: Time announcements automatically use the timezone of the weather location!
+Time announcements automatically use the timezone of the weather location!
 
 - Repeater in Houston announcing LA weather? Says LA's time (Pacific), not Houston's (Central)
 - Repeater in New York announcing Paris weather? Says Paris's time (CET), not NY's (EST)
@@ -452,8 +463,8 @@ We welcome contributions! Please feel free to:
 ### Development Setup
 
 ```bash
-git clone https://github.com/hardenedpenguin/saytime_weather.git
-cd saytime_weather
+git clone https://github.com/w5gle/saytime-weather.git
+cd saytime-weather
 # Make your changes
 make test
 make install
