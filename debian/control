@@ -7,7 +7,7 @@ Build-Depends: debhelper-compat (= 13),
                libconfig-simple-perl,
                liblog-log4perl-perl
 Standards-Version: 4.6.2
-Homepage: https://github.com/w5gle/saytime-weather
+Homepage: https://github.com/hardenedpenguin/saytime_weather
 Rules-Requires-Root: no
 
 Package: saytime-weather

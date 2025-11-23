@@ -831,7 +831,7 @@ sub postal_to_coordinates {
     }
     
     my $ua = LWP::UserAgent->new(timeout => 10);
-    $ua->agent('Mozilla/5.0 (compatible; WeatherBot/1.0; +https://github.com/w5gle/saytime-weather)');
+    $ua->agent('Mozilla/5.0 (compatible; WeatherBot/1.0; +https://github.com/hardenedpenguin/saytime_weather)');
     
     # Comprehensive Canadian FSA to city mapping (Nominatim has poor Canadian postal code coverage)
     # FSA = Forward Sortation Area (first 3 characters of Canadian postal code)

@@ -40,7 +40,7 @@ A comprehensive time and weather announcement system for Asterisk PBX, designed 
 1. **Download the latest release**:
    ```bash
    cd /tmp
-   wget https://github.com/w5gle/saytime-weather/releases/download/v2.7.5/saytime-weather_2.7.5_all.deb
+   wget https://github.com/hardenedpenguin/saytime_weather/releases/download/v2.7.5/saytime-weather_2.7.5_all.deb
    ```
 
 2. **Install the package**:
@@ -463,8 +463,8 @@ We welcome contributions! Please feel free to:
 ### Development Setup
 
 ```bash
-git clone https://github.com/w5gle/saytime-weather.git
-cd saytime-weather
+git clone https://github.com/hardenedpenguin/saytime_weather.git
+cd saytime_weather
 # Make your changes
 make test
 make install
@@ -480,9 +480,9 @@ This project is licensed under the terms specified in the LICENSE file.
 
 ## 🆘 Support
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/w5gle/saytime-weather/issues)
-- **Documentation**: Check the [Wiki](https://github.com/w5gle/saytime-weather/wiki) for detailed guides
-- **Community**: Join our [Discussions](https://github.com/w5gle/saytime-weather/discussions)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/hardenedpenguin/saytime_weather/issues)
+- **Documentation**: Check the [Wiki](https://github.com/hardenedpenguin/saytime_weather/wiki) for detailed guides
+- **Community**: Join our [Discussions](https://github.com/hardenedpenguin/saytime_weather/discussions)
 
 ## 🙏 Acknowledgments
 
