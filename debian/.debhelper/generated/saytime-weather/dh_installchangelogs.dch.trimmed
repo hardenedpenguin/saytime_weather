@@ -1,3 +1,125 @@
+saytime-weather (2.7.5) unstable; urgency=medium
+
+  * CODE CLEANUP: Improved code organization and maintainability
+    - Fixed function definition order (moved helper functions before use)
+    - Removed unused write_temperature function
+    - Simplified error handling patterns throughout
+    - Removed unnecessary eval blocks for simple operations
+  * CODE REFACTORING: Better code structure
+    - Cleaned up format_number function (removed redundant checks)
+    - Improved get_current_time function (simplified timezone handling)
+    - Replaced shell commands with safer Perl file operations
+    - Removed redundant variable initializations
+  * SECURITY: Improved file operations
+    - Replaced system("cat ...") with Perl file operations in create_output_file
+    - Better error handling for file operations
+  * MAINTENANCE: Code quality improvements
+    - Removed dead code and unused functions
+    - Simplified complex conditionals
+    - Better code organization and consistency
+    - Fixed function organization issues
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Mon, 13 Jan 2025 12:00:00 -0500
+
+saytime-weather (2.7.4) unstable; urgency=medium
+
+  * NEW FEATURE: Added ICAO airport code support with METAR weather data
+    - Now supports 6000+ airports worldwide (KJFK, EGLL, CYYZ, LFPG, RJAA, etc.)
+    - Fetches METAR (aviation weather) from NOAA Aviation Weather API
+    - Automatic detection of ICAO codes vs postal codes
+    - Falls back to postal code lookup if METAR unavailable
+  * NEW FEATURE: Command line options to override config settings
+    - Added -d, --default-country to test different countries without config edits
+    - Added -t, --temperature-mode to override F/C setting
+    - Added --no-cache and --no-condition flags
+    - Added -h, --help for detailed help and --version
+  * NEW FEATURE: Day/night detection for weather conditions
+    - Prevents saying "sunny" at 2 AM (now says "mainly clear")
+    - Uses Open-Meteo is_day field for accurate day/night awareness
+    - Code 1-2 now context-aware: "Sunny" during day, "Clear" at night
+  * NEW FEATURE: 50+ special remote locations for DXpeditions and research
+    - Expanded from 4 to 50+ locations without postal codes
+    - Antarctica: 13 research stations (Casey, Syowa, Concordia, Halley, etc.)
+    - Arctic: 7 locations (Alert, Eureka, Thule, Longyearbyen, etc.)
+    - DXpedition islands: Heard (VK0), Bouvet (3Y0), Kerguelen (FT5), etc.
+    - Pacific atolls: Midway, Wake, Johnston, Palmyra, etc.
+    - Remote islands: Easter, Pitcairn, Tristan, Ascension, etc.
+  * Improved configuration file with comprehensive documentation
+    - Added detailed explanations for each setting
+    - Included practical examples and usage instructions
+    - Shows all options with defaults and recommendations
+  * Enhanced help text with detailed examples for ICAO and postal codes
+  * Updated Open-Meteo API to use 'current' parameter (latest API)
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Sat, 11 Oct 2025 07:30:00 -0500
+
+saytime-weather (2.7.3) unstable; urgency=high
+
+  * CRITICAL: Fixed Canadian postal code location accuracy
+    - Ontario postal codes were resolving to wrong coordinates
+    - Example: N7L3R5 (Chatham) showed 35°F instead of 47°F (11°F off!)
+    - Added detailed 3-character FSA mapping for 50+ Ontario postal areas
+    - Now maps N7L→Chatham-Kent, N6A→London, N8W→Windsor, N7M→Sarnia, etc.
+  * Improved FSA lookup logic to check 3-character codes first
+  * Better single-letter fallbacks (N→London, L→Mississauga, P→Thunder Bay)
+  * Fixed indentation bug in Canadian FSA fallback code
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Sat, 11 Oct 2025 06:15:00 -0500
+
+saytime-weather (2.7.2) unstable; urgency=high
+
+  * CRITICAL: Fixed temperature conversion bug for Celsius/Canadian users
+    - Temperature was being double-converted causing incorrect readings
+    - Example: 5°C would incorrectly show as -15°C
+  * Removed all remaining Weather Underground references from codebase
+  * Updated postinst configuration template to match current code
+  * Removed obsolete API keys (timezone_api_key, geocode_api_key)
+  * Updated help text to reflect actual configuration options
+  * Configuration now correctly uses weather_provider=openmeteo
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Sat, 11 Oct 2025 05:30:00 -0500
+
+saytime-weather (2.7.1) unstable; urgency=medium
+
+  * Fixed timezone feature return bug in get_current_time function
+  * Fixed timezone not being saved/restored from cache properly
+  * Fixed timezone file creation order (weather before time)
+  * Added default_country configuration option for postal code disambiguation
+  * Added Antarctic research station location codes (SOUTHPOLE, MCMURDO, etc.)
+  * Improved US ZIP code priority to prevent international mismatches
+  * All timezone features now fully functional and tested
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Wed, 08 Oct 2025 21:30:00 -0500
+
+saytime-weather (2.7.0) unstable; urgency=medium
+
+  * CRITICAL: Replaced discontinued AccuWeather RSS with Open-Meteo API
+  * Major simplification: Removed all API key dependencies
+  * Removed Weather Underground, AeroDataBox, TimeZoneDB, OpenCage APIs
+  * Added Nominatim/OpenStreetMap geocoding (free, no API key)
+  * Added Open-Meteo weather data (free, no API key)
+  * Implemented automatic timezone detection from weather location
+  * Time now matches weather location timezone (not repeater timezone)
+  * Added worldwide postal code support (US, Canada, Europe, etc.)
+  * Added Canadian postal code FSA mapping for better coverage
+  * Simplified saytime.pl: 645→434 lines (33% reduction)
+  * Simplified weather.pl: 718→685 lines (5% reduction)
+  * Removed 4 API key configuration requirements
+  * Enhanced error handling and logging (quiet by default, verbose with -v)
+  * No API keys required - fully functional out of the box!
+  * Configuration simplified from 10 fields to 4 essential fields
+  * Improved memory efficiency with chunked binary file reading
+  * Better weather condition matching with duplicate prevention
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Wed, 08 Oct 2025 20:47:46 -0500
+
+saytime-weather (2.6.6) unstable; urgency=medium
+
+  * AeroDataBox fixes and debug logging improvements
+  * Unified airport code support in saytime.pl and weather.pl
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Mon, 14 Jul 2025 22:35:00 +0000
+
 saytime-weather (2.6.5) unstable; urgency=medium
 
   * Fix AeroDataBox timezone parsing: use 'timeZone' key from API response

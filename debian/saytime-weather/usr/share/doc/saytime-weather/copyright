@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: saytime-weather
 Upstream-Contact: Jory A. Pratt <geekypenguin@gmail.com>
-Source: https://github.com/hardenedpenguin/saytime_weather
+Source: https://github.com/w5gle/saytime-weather
 
 Files: *
 Copyright: 2025 Jory A. Pratt <geekypenguin@gmail.com>

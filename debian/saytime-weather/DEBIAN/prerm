@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+# Check if the package is being removed or upgraded
+if [ "$1" = "remove" ]; then
+    # Remove the weather.ini configuration file if it exists
+    CONFIG_FILE="/etc/asterisk/local/weather.ini"
+
+    if [ -f "$CONFIG_FILE" ]; then
+        echo "Removing configuration file: $CONFIG_FILE"
+        rm -f "$CONFIG_FILE"
+    fi
+
+    # Clean up the cache directory if it exists
+    CACHE_DIR="/var/cache/weather"
+    if [ -d "$CACHE_DIR" ]; then
+        echo "Removing cache directory: $CACHE_DIR"
+        rm -rf "$CACHE_DIR"
+    fi
+else
+    echo "Upgrading package, skipping removal of configuration and cache files."
+fi
+
+# Other pre-removal tasks can go here
+
+
+
+exit 0 

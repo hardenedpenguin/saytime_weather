@@ -1,0 +1,135 @@
+#!/bin/sh
+set -e
+
+# Create necessary directories
+mkdir -p /var/cache/weather
+mkdir -p /etc/asterisk/local
+
+# Create the weather.ini file if it doesn't exist
+CONFIG_FILE="/etc/asterisk/local/weather.ini"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Creating default configuration file: $CONFIG_FILE"
+    cat <<EOT > "$CONFIG_FILE"
+; ============================================================================
+; Weather Configuration for saytime-weather
+; ============================================================================
+; This file controls how weather data is fetched and announced.
+; All settings have sensible defaults - no changes required to get started!
+; ============================================================================
+
+[weather]
+
+; ============================================================================
+; TEMPERATURE SETTINGS
+; ============================================================================
+
+; Temperature display mode: F for Fahrenheit, C for Celsius
+; Default: F
+; Examples: Temperature_mode = F  (for 72°F)
+;           Temperature_mode = C  (for 22°C)
+Temperature_mode = F
+
+; ============================================================================
+; CONDITION ANNOUNCEMENTS
+; ============================================================================
+
+; Process and announce weather conditions (cloudy, rain, clear, etc.)
+; Set to NO to only announce temperature
+; Default: YES
+process_condition = YES
+
+; ============================================================================
+; LOCATION SETTINGS
+; ============================================================================
+
+; Default country for ambiguous postal code lookups
+; Helps with 5-digit codes that could be multiple countries
+; Use ISO 3166-1 alpha-2 country codes: us, ca, de, fr, uk, etc.
+; Leave blank for international search (slower)
+; Default: us
+; Examples: default_country = us  (prioritize US ZIP codes)
+;           default_country = ca  (prioritize Canadian postal codes)
+;           default_country =     (search all countries)
+default_country = us
+
+; ============================================================================
+; WEATHER DATA SOURCE
+; ============================================================================
+
+; Weather data provider (currently only openmeteo supported)
+; Open-Meteo is free, requires no API key, and provides worldwide coverage
+; This option is reserved for future providers
+; Default: openmeteo
+weather_provider = openmeteo
+
+; ============================================================================
+; CACHE SETTINGS
+; ============================================================================
+
+; Enable caching to reduce API calls and improve response time
+; Recommended: YES (faster repeated lookups, reduces API load)
+; Set to NO only for testing or if you need real-time updates
+; Default: YES
+cache_enabled = YES
+
+; Cache duration in seconds (how long to keep weather data)
+; Default: 1800 (30 minutes)
+; Examples: cache_duration = 1800   (30 minutes, recommended)
+;           cache_duration = 3600   (1 hour)
+;           cache_duration = 900    (15 minutes)
+;           cache_duration = 300    (5 minutes, for testing)
+cache_duration = 1800
+
+; ============================================================================
+; USAGE EXAMPLES
+; ============================================================================
+; 
+; Test weather for your location:
+;   /usr/sbin/weather.pl YOUR_POSTAL_CODE v
+;
+; Examples:
+;   /usr/sbin/weather.pl 90210 v          (Beverly Hills, CA)
+;   /usr/sbin/weather.pl M5H2N2 v         (Toronto, ON)
+;   /usr/sbin/weather.pl 10115 v          (Berlin, Germany)
+;
+; Use with Asterisk:
+;   /usr/sbin/saytime.pl -l 90210 -n 1
+;
+; ============================================================================
+EOT
+    chmod 0644 "$CONFIG_FILE"
+    echo "Default configuration file created."
+else
+    echo "Configuration file already exists: $CONFIG_FILE"
+fi
+
+# Set correct ownership
+chown asterisk:asterisk /var/cache/weather
+chown asterisk:asterisk /usr/share/asterisk/sounds/en/wx
+chown asterisk:asterisk /usr/sbin/saytime.pl
+chown asterisk:asterisk /usr/sbin/weather.pl
+
+# Set correct permissions
+chmod 755 /usr/sbin/saytime.pl
+chmod 755 /usr/sbin/weather.pl
+chmod 644 /usr/share/asterisk/sounds/en/wx/*
+chmod 755 /var/cache/weather
+
+
+
+case "$1" in
+    configure)
+        # Other post-installation tasks can go here
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+exit 0 
