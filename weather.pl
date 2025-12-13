@@ -27,6 +27,7 @@ use Encode qw(decode);
 use Cache::FileCache;
 use File::Spec;
 use Getopt::Long qw(:config no_ignore_case bundling);
+use URI::Escape qw(uri_escape);
 
 # Define paths at the top of the script
 my @CONFIG_PATHS = (
@@ -279,6 +280,21 @@ if ($config{cache_enabled} eq "YES") {
 my $location = shift @ARGV // '';
 my $display_only = shift @ARGV // '';
 
+# Validate location input to prevent injection attacks
+if (defined $location && $location ne '') {
+    # Allow alphanumeric, spaces, hyphens, underscores, and common postal code characters
+    # Also allow ICAO codes (4 letters) and special location names (letters only)
+    unless ($location =~ /^[a-zA-Z0-9\s\-_]+$/) {
+        ERROR("Invalid location format. Only alphanumeric characters, spaces, hyphens, and underscores are allowed.");
+        ERROR("  Provided: $location");
+        ERROR("  Examples: 77511, M5H2N2, KJFK, ALERT");
+        exit 1;
+    }
+    
+    # Trim whitespace
+    $location =~ s/^\s+|\s+$//g;
+}
+
 if (not defined $location || $location eq '') {
     print "\n";
     print "USAGE: $0 <postal code>\n";
@@ -395,12 +411,17 @@ if (not defined $current or $current eq "") {
                     timezone => $tz || ''
                 });
             }
-        } else {
-            WARN("Failed to fetch weather data from Open-Meteo");
-        }
     } else {
-        WARN("Could not get coordinates for location: $location");
+        ERROR("Failed to fetch weather data from Open-Meteo");
+        ERROR("  Location: $location");
+        ERROR("  Coordinates: lat=$lat, lon=$lon");
+        ERROR("  Hint: Check internet connectivity and API availability");
     }
+} else {
+    ERROR("Could not get coordinates for location: $location");
+    ERROR("  Hint: Verify the postal code or location name is correct");
+    ERROR("  For ICAO codes, ensure the airport code is valid (e.g., KJFK, EGLL)");
+}
     
     $w_type = "openmeteo" unless $w_type;
     }
@@ -408,6 +429,8 @@ if (not defined $current or $current eq "") {
 
 if (not defined $current or $current eq "") {
     ERROR("No weather report available");
+    ERROR("  Location: $location");
+    ERROR("  Hint: Check that the location is valid and weather services are accessible");
     exit 1;
 }
 
@@ -531,7 +554,9 @@ if ($config{process_condition} eq "YES" && $Condition) {
             exit 1;
         }
     } else {
-        WARN("No weather condition sound files found for: $Condition");
+        WARN("No weather condition sound files found for: $Condition", 1);  # Critical warning
+        WARN("  Expected sound directory: $sound_dir", 1);
+        WARN("  Hint: Install weather sound files or disable condition announcements", 1);
     }
 }
 
@@ -642,9 +667,11 @@ sub DEBUG {
 }
 
 sub WARN {
-    my ($msg) = @_;
-    # Only show warnings in verbose mode
-    print STDERR "WARNING: $msg\n" if $options{verbose};
+    my ($msg, $critical) = @_;
+    # Show critical warnings always, others only in verbose mode
+    if ($critical || $options{verbose}) {
+        print STDERR "WARNING: $msg\n";
+    }
 }
 
 # Check if input looks like an ICAO airport code
@@ -673,7 +700,9 @@ sub fetch_metar_weather {
     $ua->agent('Mozilla/5.0 (compatible; WeatherBot/1.0)');
     
     # Try NOAA Aviation Weather API first
-    my $url = "https://aviationweather.gov/api/data/metar?ids=${icao}&format=raw&hours=0&taf=false";
+    # Escape ICAO code in URL (though it's already validated as 4 letters)
+    my $escaped_icao = uri_escape($icao);
+    my $url = "https://aviationweather.gov/api/data/metar?ids=$escaped_icao&format=raw&hours=0&taf=false";
     my $response = $ua->get($url);
     
     my $metar;
@@ -685,7 +714,8 @@ sub fetch_metar_weather {
     # Fallback to NWS if Aviation Weather failed
     if (!$metar || $metar eq '') {
         DEBUG("  Trying NWS fallback...") if $options{verbose};
-        $url = "https://tgftp.nws.noaa.gov/data/observations/metar/stations/${icao}.TXT";
+        # Escape ICAO code in URL (though it's already validated as 4 letters)
+        $url = "https://tgftp.nws.noaa.gov/data/observations/metar/stations/$escaped_icao.TXT";
         $response = $ua->get($url);
         if ($response->is_success) {
             my @lines = split /\n/, $response->decoded_content;
@@ -951,10 +981,14 @@ sub postal_to_coordinates {
         # Use configured default_country, fallback to US if not set
         $country = lc($config{default_country}) || 'us';
         if ($country && $country ne '') {
-            $url = "https://nominatim.openstreetmap.org/search?postalcode=$postal&country=$country&format=json&limit=1";
+            # Escape user input in URL to prevent injection
+            my $escaped_postal = uri_escape($postal);
+            my $escaped_country = uri_escape($country);
+            $url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&country=$escaped_country&format=json&limit=1";
             DEBUG("  Using default country: $country") if $options{verbose};
         } else {
-            $url = "https://nominatim.openstreetmap.org/search?postalcode=$postal&format=json&limit=1";
+            my $escaped_postal = uri_escape($postal);
+            $url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&format=json&limit=1";
         }
     } elsif ($postal =~ /^([A-Z]\d[A-Z])\s?\d[A-Z]\d$/i) {
         # Canadian: A1A 1A1 or A1A1A1
@@ -964,10 +998,15 @@ sub postal_to_coordinates {
         my $normalized = uc($postal);
         $normalized =~ s/\s+//g;  # Remove any spaces
         $normalized =~ s/^([A-Z]\d[A-Z])(\d[A-Z]\d)$/$1 $2/;  # Add space in middle
-        $url = "https://nominatim.openstreetmap.org/search?postalcode=$normalized&country=$country&format=json&limit=1";
+        # Escape user input in URL to prevent injection
+        my $escaped_postal = uri_escape($normalized);
+        my $escaped_country = uri_escape($country);
+        $url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&country=$escaped_country&format=json&limit=1";
     } else {
         # Other international codes
-        $url = "https://nominatim.openstreetmap.org/search?postalcode=$postal&format=json&limit=1";
+        # Escape user input in URL to prevent injection
+        my $escaped_postal = uri_escape($postal);
+        $url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&format=json&limit=1";
     }
     
     DEBUG("  Trying URL: $url") if $options{verbose};
@@ -993,7 +1032,9 @@ sub postal_to_coordinates {
             # If country-specific search failed for 5-digit code, try international
             if ($country && $postal =~ /^\d{5}$/) {
                 DEBUG("  $country search failed, trying international for $postal") if $options{verbose};
-                my $intl_url = "https://nominatim.openstreetmap.org/search?postalcode=$postal&format=json&limit=1";
+                # Escape user input in URL to prevent injection
+                my $escaped_postal = uri_escape($postal);
+                my $intl_url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&format=json&limit=1";
                 sleep 1;  # Rate limit
                 $response = $ua->get($intl_url);
                 if ($response->is_success) {
@@ -1032,7 +1073,9 @@ sub postal_to_coordinates {
                 if ($city_name) {
                     DEBUG("  Trying Canadian city lookup: $city_name (FSA: $lookup_fsa)") if $options{verbose};
                     
-                    my $city_url = "https://nominatim.openstreetmap.org/search?q=$city_name&format=json&limit=1";
+                    # Escape city name in URL to prevent injection
+                    my $escaped_city = uri_escape($city_name);
+                    my $city_url = "https://nominatim.openstreetmap.org/search?q=$escaped_city&format=json&limit=1";
                     sleep 1;  # Rate limit
                     $response = $ua->get($city_url);
                     if ($response->is_success) {

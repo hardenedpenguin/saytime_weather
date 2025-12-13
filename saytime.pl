@@ -61,6 +61,7 @@ GetOptions(
     "sound-dir=s" => \$options{custom_sound_dir},
     "log=s" => \$options{log_file},
     "method|m" => sub { $options{play_method} = 'playback' },
+    "help" => sub { show_usage(); exit 0; },
 ) or show_usage();
 
 $options{play_method} //= 'localplay';
@@ -210,48 +211,75 @@ sub get_current_time {
 # Now using simple system local time - the repeater's timezone is correct for local listeners
 # Weather fetching is handled by weather.pl which uses Nominatim + Open-Meteo (no API keys needed)
 
+sub check_sound_file {
+    my ($file) = @_;
+    unless (-f $file) {
+        WARN("Sound file not found: $file");
+        WARN("  Expected location: $file");
+        WARN("  Check that sound files are installed correctly");
+        return 0;
+    }
+    return 1;
+}
+
+sub add_sound_file {
+    my ($file, $missing_ref) = @_;
+    if (check_sound_file($file)) {
+        return "$file ";
+    } else {
+        $$missing_ref++ if defined $missing_ref;
+        # Still return the file path - let create_output_file handle missing files gracefully
+        return "$file ";
+    }
+}
+
 sub process_time {
     my ($now, $use_24hour) = @_;
     my @files;
     my $sound_dir = $options{custom_sound_dir} || BASE_SOUND_DIR;
+    my $missing_files = 0;
     
     if ($options{greeting_enabled}) {
         my $hour = $now->hour;
         my $greeting = $hour < 12 ? "morning" : $hour < 18 ? "afternoon" : "evening";
-        push @files, "$sound_dir/rpt/good$greeting.ulaw ";
+        push @files, add_sound_file("$sound_dir/rpt/good$greeting.ulaw", \$missing_files);
     }
     
-    push @files, "$sound_dir/rpt/thetimeis.ulaw ";
+    push @files, add_sound_file("$sound_dir/rpt/thetimeis.ulaw", \$missing_files);
     
     my ($hour, $minute) = ($now->hour, $now->minute);
     
     if ($use_24hour) {
         if ($hour < 10) {
-            push @files, "$sound_dir/digits/0.ulaw ";
+            push @files, add_sound_file("$sound_dir/digits/0.ulaw", \$missing_files);
         }
         push @files, format_number($hour, $sound_dir);
         
         if ($minute == 0) {
-            push @files, "$sound_dir/digits/hundred.ulaw ";
-            push @files, "$sound_dir/hours.ulaw ";
+            push @files, add_sound_file("$sound_dir/digits/hundred.ulaw", \$missing_files);
+            push @files, add_sound_file("$sound_dir/hours.ulaw", \$missing_files);
         } else {
             if ($minute < 10) {
-                push @files, "$sound_dir/digits/0.ulaw ";
+                push @files, add_sound_file("$sound_dir/digits/0.ulaw", \$missing_files);
             }
             push @files, format_number($minute, $sound_dir);
-            push @files, "$sound_dir/hours.ulaw ";
+            push @files, add_sound_file("$sound_dir/hours.ulaw", \$missing_files);
         }
     } else {
         my $display_hour = ($hour == 0 || $hour == 12) ? 12 : ($hour > 12 ? $hour - 12 : $hour);
-        push @files, "$sound_dir/digits/$display_hour.ulaw ";
+        push @files, add_sound_file("$sound_dir/digits/$display_hour.ulaw", \$missing_files);
         
         if ($minute != 0) {
             if ($minute < 10) {
-                push @files, "$sound_dir/digits/0.ulaw ";
+                push @files, add_sound_file("$sound_dir/digits/0.ulaw", \$missing_files);
             }
             push @files, format_number($minute, $sound_dir);
         }
-        push @files, "$sound_dir/digits/" . ($hour < 12 ? "a-m" : "p-m") . ".ulaw ";
+        push @files, add_sound_file("$sound_dir/digits/" . ($hour < 12 ? "a-m" : "p-m") . ".ulaw", \$missing_files);
+    }
+    
+    if ($missing_files > 0 && !$options{verbose}) {
+        WARN("$missing_files sound file(s) missing. Run with -v for details.");
     }
     
     return join("", @files);
@@ -268,15 +296,24 @@ sub process_weather {
     unlink $temp_file_to_clean if -e $temp_file_to_clean;
     unlink $weather_condition_file_to_clean if -e $weather_condition_file_to_clean;
     
-    my $weather_cmd = sprintf("%s %s", WEATHER_SCRIPT, $location_id);
-    my $weather_result_raw = system($weather_cmd);
+    # Use system() with list form to prevent command injection
+    # Validate location_id contains only safe characters (alphanumeric, spaces, hyphens, underscores)
+    if ($location_id =~ /[^a-zA-Z0-9\s\-_]/) {
+        ERROR("Invalid location ID format. Only alphanumeric characters, spaces, hyphens, and underscores are allowed.");
+        ERROR("  Location: $location_id");
+        $critical_error_occurred = 1;
+        return "";
+    }
+    
+    my $weather_result_raw = system(WEATHER_SCRIPT, $location_id);
     
     if ($weather_result_raw != 0) {
         my $exit_code = $? >> 8;
         ERROR("Weather script failed:");
         ERROR("  Location: $location_id");
-        ERROR("  Command: $weather_cmd");
+        ERROR("  Script: " . WEATHER_SCRIPT);
         ERROR("  Exit code: $exit_code");
+        ERROR("  Hint: Check that weather.pl is installed and location ID is valid");
         $critical_error_occurred = 1;
         return "";
     }
@@ -291,19 +328,46 @@ sub process_weather {
         chomp(my $temp = <$temp_fh>);
         close $temp_fh;
         
+        # Check for required sound files
+        my @required_files = (
+            "$sound_dir/silence/1.ulaw",
+            "$sound_dir/wx/weather.ulaw",
+            "$sound_dir/wx/conditions.ulaw",
+            "$weather_condition_file",
+            "$sound_dir/wx/temperature.ulaw",
+            "$sound_dir/wx/degrees.ulaw"
+        );
+        
+        my $missing_count = 0;
+        for my $file (@required_files) {
+            next if $file eq $weather_condition_file;  # This is generated, not required to exist beforehand
+            unless (-f $file) {
+                WARN("Weather sound file not found: $file") if $options{verbose};
+                $missing_count++;
+            }
+        }
+        
+        if ($missing_count > 0 && $options{verbose}) {
+            WARN("$missing_count weather sound file(s) missing. Announcement may be incomplete.");
+        }
+        
         $files = "$sound_dir/silence/1.ulaw " .
                  "$sound_dir/wx/weather.ulaw " .
                  "$sound_dir/wx/conditions.ulaw $weather_condition_file " .
                  "$sound_dir/wx/temperature.ulaw ";
                  
         if ($temp < 0) {
-            $files .= "$sound_dir/digits/minus.ulaw ";
+            my $missing_count_ref = \$missing_count;
+            $files .= add_sound_file("$sound_dir/digits/minus.ulaw", $missing_count_ref);
             $temp = abs($temp);
         }
         
         $files .= format_number($temp, $sound_dir);
         $files .= "$sound_dir/wx/degrees.ulaw ";
     } else {
+        ERROR("Temperature file not found after running weather script");
+        ERROR("  Expected: $temp_file");
+        ERROR("  Hint: Check that weather.pl completed successfully");
         Log::Log4perl::get_logger()->warn("Temperature file not found after running weather script: $temp_file");
     }
     
@@ -315,39 +379,29 @@ sub format_number {
     my $files = "";
     my $abs_num = abs($num);
 
-    if ($abs_num == 0 && $files eq "") {
-        return "$sound_dir/digits/0.ulaw ";
-    }
-    if ($abs_num == 0 && $files ne "") {
-        return $files;
-    }
+    # Handle zero case
+    return "$sound_dir/digits/0.ulaw " if $abs_num == 0;
 
+    # Handle hundreds
     if ($abs_num >= 100) {
         my $hundreds = int($abs_num / 100);
         $files .= "$sound_dir/digits/$hundreds.ulaw ";
         $files .= "$sound_dir/digits/hundred.ulaw ";
         $abs_num %= 100;
-        if ($abs_num == 0) { return $files; }
-    }
-    
-    if ($abs_num == 0 && $files eq "") { # Should not happen if logic above is correct, but as safeguard
-        return "$sound_dir/digits/0.ulaw "; # Or maybe return "" if files is already populated
-    }
-    if ($abs_num == 0 && $files ne "") {
-         return $files; # Number like 100, 200, 1000 etc.
+        return $files if $abs_num == 0;
     }
 
-
+    # Handle numbers less than 20 (special cases like 11, 12, etc.)
     if ($abs_num < 20) {
         $files .= "$sound_dir/digits/$abs_num.ulaw ";
     } else {
+        # Handle tens and ones
         my $tens = int($abs_num / 10) * 10;
         my $ones = $abs_num % 10;
         $files .= "$sound_dir/digits/$tens.ulaw ";
-        if ($ones) {
-            $files .= "$sound_dir/digits/$ones.ulaw ";
-        }
+        $files .= "$sound_dir/digits/$ones.ulaw " if $ones;
     }
+    
     return $files;
 }
 
@@ -366,12 +420,59 @@ sub combine_sound_files {
 
 sub create_output_file {
     my ($input_files, $output_file) = @_;
-    my $cat_result_raw = system("cat $input_files > $output_file");
-    if ($cat_result_raw != 0) {
-        my $exit_code = $? >> 8;
-        my $signal_num = $? & 127;
-        my $dumped_core = $? & 128;
-        ERROR("cat command failed. Exit code: $exit_code, Signal: $signal_num, Core dump: $dumped_core. Files: $input_files");
+    
+    # Use Perl file operations instead of shell cat to prevent command injection
+    eval {
+        open my $out_fh, '>', $output_file
+            or die "Cannot open output file $output_file: $!";
+        binmode($out_fh);  # Binary mode for .ulaw files
+        
+        # Split input_files string into individual file paths
+        my @files = split(/\s+/, $input_files);
+        my $files_processed = 0;
+        
+        for my $file (@files) {
+            next unless $file && $file =~ /\.ulaw$/;  # Only process .ulaw files
+            
+            # Validate file path is safe (no directory traversal)
+            if ($file =~ /\.\./ || $file =~ /^[\/]/ && $file !~ /^\/usr\/share\/asterisk\/sounds/ && $file !~ /^\/tmp\//) {
+                WARN("Skipping potentially unsafe file path: $file");
+                next;
+            }
+            
+            if (-f $file) {
+                open my $in_fh, '<', $file
+                    or do { WARN("Cannot open input file $file: $!"); next; };
+                binmode($in_fh);  # Binary mode for .ulaw files
+                
+                # Copy file contents in chunks for efficiency
+                my $buffer;
+                while (read($in_fh, $buffer, 8192)) {
+                    print $out_fh $buffer;
+                }
+                close $in_fh;
+                $files_processed++;
+            } else {
+                WARN("Sound file not found: $file");
+                WARN("  Expected location: $file");
+                WARN("  Check that sound files are installed in the sound directory");
+            }
+        }
+        
+        close $out_fh;
+        
+        if ($files_processed == 0) {
+            die "No valid sound files were processed";
+        }
+        
+        DEBUG("Concatenated $files_processed sound files to $output_file") if $options{verbose};
+    };
+    
+    if ($@) {
+        ERROR("Failed to create output file:");
+        ERROR("  Output: $output_file");
+        ERROR("  Error: $@");
+        ERROR("  Hint: Check file permissions and disk space");
         $critical_error_occurred = 1;
     }
 }
@@ -380,29 +481,44 @@ sub play_announcement {
     my ($node, $asterisk_file) = @_;
     
     $asterisk_file =~ s/\.ulaw$//;
+    
+    # Validate inputs to prevent command injection
+    unless ($node =~ /^\d+$/) {
+        ERROR("Invalid node number format: $node");
+        $critical_error_occurred = 1;
+        return;
+    }
+    
+    unless ($options{play_method} =~ /^(localplay|playback)$/) {
+        ERROR("Invalid play method: $options{play_method}");
+        $critical_error_occurred = 1;
+        return;
+    }
+    
+    # Sanitize asterisk_file path (remove any potentially dangerous characters)
+    $asterisk_file =~ s/[^a-zA-Z0-9\/\-_\.]//g;
 
     if ($options{test_mode}) {
         INFO("Test mode - would execute: rpt $options{play_method} $node $asterisk_file");
         return;
     }
     
-    my $asterisk_cmd = sprintf(
-        "%s -rx \"rpt %s %s %s\"",
-        ASTERISK_BIN,
-        $options{play_method},
-        $node,
-        $asterisk_file
-    );
+    # Use system() with list form for better security
+    # Note: Asterisk CLI requires the command as a single string, so we construct it carefully
+    my $asterisk_cmd = "rpt $options{play_method} $node $asterisk_file";
+    
+    DEBUG("Executing: " . ASTERISK_BIN . " -rx \"$asterisk_cmd\"") if $options{verbose};
 
-    DEBUG("Executing: $asterisk_cmd") if $options{verbose};
-
-    my $asterisk_result_raw = system($asterisk_cmd);
+    # Escape the command string properly for shell
+    my $asterisk_result_raw = system(ASTERISK_BIN, "-rx", $asterisk_cmd);
     if ($asterisk_result_raw != 0) {
         my $exit_code = $? >> 8;
         ERROR("Failed to play announcement:");
         ERROR("  Method: $options{play_method}");
-        ERROR("  Command: $asterisk_cmd");
+        ERROR("  Node: $node");
+        ERROR("  File: $asterisk_file");
         ERROR("  Exit code: $exit_code");
+        ERROR("  Hint: Verify Asterisk is running and node number is correct");
         $critical_error_occurred = 1;
     }
     sleep PLAY_DELAY;
