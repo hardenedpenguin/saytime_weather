@@ -1,3 +1,32 @@
+saytime-weather (2.7.5) unstable; urgency=high
+
+  * SECURITY: Fixed critical shell command injection vulnerabilities
+    - saytime.pl: Use system() with list form for weather.pl call
+    - saytime.pl: Replaced shell cat with Perl file operations
+    - saytime.pl: Added input validation for location_id parameter
+    - saytime.pl: Improved Asterisk command security with input sanitization
+    - weather.pl: Fixed URL injection vulnerabilities (7 locations)
+    - weather.pl: Added URI::Escape for proper URL encoding of user input
+    - weather.pl: Added input validation for location parameter
+  * SECURITY: Enhanced input validation throughout both scripts
+    - Validates location IDs contain only safe characters
+    - Prevents directory traversal in file paths
+    - Sanitizes all user input before use in commands/URLs
+  * IMPROVEMENT: Added --help option to saytime.pl
+    - Now properly implemented in GetOptions as documented
+  * IMPROVEMENT: Code quality enhancements
+    - Simplified format_number() function (removed redundant code)
+    - Added sound file validation with check_sound_file() helper
+    - Enhanced error messages with context and troubleshooting hints
+    - Improved WARN() function in weather.pl to support critical warnings
+    - Better error handling throughout both scripts
+  * IMPROVEMENT: Enhanced user experience
+    - More informative error messages with hints
+    - Better validation feedback
+    - Improved debugging output
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Sat, 13 Dec 2025 15:17:52 -0600
+
 saytime-weather (2.7.4) unstable; urgency=medium
 
   * NEW FEATURE: Added ICAO airport code support with METAR weather data

@@ -30,7 +30,7 @@ use constant {
     ASTERISK_BIN => "/usr/sbin/asterisk",
     DEFAULT_PLAY_METHOD => 'localplay',
     PLAY_DELAY => 5,
-    VERSION => '2.7.4',
+    VERSION => '2.7.5',
 };
 
 my %options = (
