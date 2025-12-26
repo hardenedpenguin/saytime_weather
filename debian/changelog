@@ -1,3 +1,29 @@
+saytime-weather (2.7.6) unstable; urgency=medium
+
+  * IMPROVEMENT: Code simplification and refactoring
+    - Removed dead code: write_temperature(), validate_temperature(), @TEMP_PATHS
+    - Removed duplicate validation functions and redundant checks
+    - Replaced manual INI parsing with Config::Simple in weather.pl (consistent with saytime.pl)
+    - Added helper functions for better code reuse:
+      + create_ua() - Consistent LWP::UserAgent creation
+      + safe_decode_json() - Safe JSON parsing with error handling
+      + build_nominatim_url() - URL construction with proper escaping
+      + tmp_file() - Centralized temp file path construction
+      + is_safe_path() - Extracted path validation logic
+      + read_timezone_file() - Extracted timezone reading logic
+    - Extracted constants for magic numbers (HTTP_TIMEOUT_SHORT/LONG, HTTP_BUFFER_SIZE, etc.)
+    - Simplified cleanup_files() using array iteration
+    - Simplified get_current_time() by extracting timezone reading
+    - Replaced 7+ instances of duplicated code with helper functions
+    - Improved code maintainability and testability
+  * IMPROVEMENT: Documentation simplification
+    - Reduced README.md from 498 to 225 lines (55% reduction)
+    - Removed redundant examples and verbose sections
+    - Streamlined troubleshooting and usage sections
+    - Removed changelog section (users can refer to GitHub releases)
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Sat, 14 Dec 2025 10:00:00 -0600
+
 saytime-weather (2.7.5) unstable; urgency=high
 
   * SECURITY: Fixed critical shell command injection vulnerabilities

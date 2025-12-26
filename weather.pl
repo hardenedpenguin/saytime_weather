@@ -28,6 +28,7 @@ use Cache::FileCache;
 use File::Spec;
 use Getopt::Long qw(:config no_ignore_case bundling);
 use URI::Escape qw(uri_escape);
+use Config::Simple;
 
 # Define paths at the top of the script
 my @CONFIG_PATHS = (
@@ -41,19 +42,23 @@ my @CACHE_PATHS = (
     "/tmp/weather-cache"
 );
 
-my @TEMP_PATHS = (
-    "/tmp/temperature",
-    "/tmp/condition.ulaw",
-    "/tmp/timezone"
-);
+# TEMP_PATHS removed - using constants TEMP_FILE, COND_FILE, TIMEZONE_FILE instead
 
 use constant {
     TMP_DIR => "/tmp",
     TEMP_FILE => "/tmp/temperature",
     COND_FILE => "/tmp/condition.ulaw",
     TIMEZONE_FILE => "/tmp/timezone",
-    VERSION => '2.7.5',
+    VERSION => '2.7.6',
     WEATHER_SOUND_DIR => "/usr/share/asterisk/sounds/en/wx",
+    # HTTP client settings
+    HTTP_TIMEOUT_SHORT => 10,  # For Nominatim (faster responses expected)
+    HTTP_TIMEOUT_LONG => 15,   # For weather APIs (may be slower)
+    HTTP_BUFFER_SIZE => 8192,  # File I/O buffer size
+    # Cache settings
+    CACHE_AUTO_PURGE_INTERVAL => 3600,  # 1 hour
+    # Nominatim rate limiting
+    NOMINATIM_DELAY => 1,  # Seconds between requests (respects 1 req/sec policy)
 };
 
 # Add options hash near the top
@@ -92,19 +97,15 @@ if ($options{config_file} && !-f $options{config_file}) {
 
 foreach my $config_file (@config_paths_to_try) {
     if (-f $config_file) {
-        open my $fh, "<", $config_file or next;
-        while (my $line = <$fh>) {
-            chomp $line;
-            $line =~ s/^\s+|\s+$//g; # Trim leading/trailing whitespace
-            next if $line eq '' || $line =~ /^;/; # Skip empty lines and comments
-            next if $line =~ /^\[.*\]$/; # Skip section headers
-            if ($line =~ /^([^=]+?)\s*=\s*"([^"]*)"\s*$/) {
-                $config{$1} = $2;
-            } elsif ($line =~ /^([^=]+?)\s*=\s*([^\"]\S*)\s*$/) {
-                $config{$1} = $2;
-            }
+        # Use Config::Simple for robust INI parsing (same as saytime.pl)
+        eval {
+            Config::Simple->import_from($config_file, \%config)
+                or die "Cannot load config file: " . Config::Simple->error();
+        };
+        if ($@) {
+            WARN("Failed to parse config file $config_file: $@");
+            next;
         }
-        close $fh;
         last;  # Stop after first successful config file
     } elsif (!$config_created) {
         # Try to create config file in the first available location
@@ -226,12 +227,21 @@ EOT
 }
 
 # Set default values for all configuration options
-$config{process_condition} = "YES" unless defined $config{process_condition};
-$config{Temperature_mode} = "F" unless defined $config{Temperature_mode};
-$config{default_country} = "us" unless defined $config{default_country};  # Default to US
-$config{weather_provider} = "openmeteo" unless defined $config{weather_provider};  # Default to Open-Meteo
-$config{cache_enabled} = "YES" unless defined $config{cache_enabled};
-$config{cache_duration} = "1800" unless defined $config{cache_duration};  # 30 minutes default
+# Config::Simple uses "section.key" format, but we also support "key" for backward compatibility
+$config{"weather.process_condition"} ||= $config{process_condition} || "YES";
+$config{"weather.Temperature_mode"} ||= $config{Temperature_mode} || "F";
+$config{"weather.default_country"} ||= $config{default_country} || "us";
+$config{"weather.weather_provider"} ||= $config{weather_provider} || "openmeteo";
+$config{"weather.cache_enabled"} ||= $config{cache_enabled} || "YES";
+$config{"weather.cache_duration"} ||= $config{cache_duration} || "1800";
+
+# Normalize to simple keys for easier access
+$config{process_condition} = $config{"weather.process_condition"} || $config{process_condition} || "YES";
+$config{Temperature_mode} = $config{"weather.Temperature_mode"} || $config{Temperature_mode} || "F";
+$config{default_country} = $config{"weather.default_country"} || $config{default_country} || "us";
+$config{weather_provider} = $config{"weather.weather_provider"} || $config{weather_provider} || "openmeteo";
+$config{cache_enabled} = $config{"weather.cache_enabled"} || $config{cache_enabled} || "YES";
+$config{cache_duration} = $config{"weather.cache_duration"} || $config{cache_duration} || "1800";
 
 # Apply command line overrides (these take precedence over config file)
 if (defined $options{default_country}) {
@@ -263,7 +273,7 @@ if ($config{cache_enabled} eq "YES") {
         $cache = Cache::FileCache->new({
             cache_root => $cache_path,
             default_expires_in => $config{cache_duration},
-            auto_purge_interval => 3600,  # 1 hour
+            auto_purge_interval => CACHE_AUTO_PURGE_INTERVAL,
             auto_purge_on_set => 1,
         });
         last if defined $cache;
@@ -324,8 +334,7 @@ my $current = "";  # Initialize to avoid undefined
 my $Temperature = "";  # Initialize to avoid undefined
 my $Condition = "";  # Initialize to avoid undefined
 
-# Move location validation before cache check
-validate_options();  # Add this before cache check
+# Location validation already done above (lines 284-296), no need to validate again
 
 # Move cleanup to start of processing
 cleanup_old_files();  # Add this after validating options
@@ -541,7 +550,7 @@ if ($config{process_condition} eq "YES" && $Condition) {
                         or die "Cannot open $file: $!";
                     # Read and write in chunks for better memory efficiency
                     my $buffer;
-                    while (read($in_fh, $buffer, 8192)) {
+                    while (read($in_fh, $buffer, HTTP_BUFFER_SIZE)) {
                         print $condition_fh $buffer;
                     }
                     close $in_fh;
@@ -560,12 +569,7 @@ if ($config{process_condition} eq "YES" && $Condition) {
     }
 }
 
-# Add more descriptive error messages
-if (!defined $location) {
-    ERROR("Location ID not provided");
-    exit 1;
-}
-
+# Validate temporary directory access (location already validated earlier)
 if (!-d TMP_DIR()) {
     ERROR("Temporary directory not found: " . TMP_DIR());
     exit 1;
@@ -625,18 +629,7 @@ sub show_usage {
 
 # Note: fetch_weather function removed as it was unused dead code
 # Weather fetching is done inline in the main code flow
-
-sub write_temperature {
-    my ($temp) = @_;
-    
-    DEBUG("Writing temperature: $temp") if $options{verbose};
-    
-    open my $fh, '>', TEMP_FILE or die "Cannot write temperature file: $!";
-    print $fh $temp;
-    close $fh;
-    
-    DEBUG("Temperature file written: " . TEMP_FILE) if $options{verbose};
-}
+# Note: write_temperature() removed as it was unused - temperature writing is done inline
 
 sub cleanup_old_files {
     DEBUG("Cleaning up old weather files:") if $options{verbose};
@@ -649,12 +642,7 @@ sub cleanup_old_files {
     }
 }
 
-sub validate_options {
-    if (!defined $location || $location eq '') {
-        ERROR("Postal code not provided");
-        show_usage();
-    }
-}
+# validate_options() removed - location validation is done earlier (lines 284-296)
 
 sub ERROR {
     my ($msg) = @_;
@@ -671,6 +659,41 @@ sub WARN {
     # Show critical warnings always, others only in verbose mode
     if ($critical || $options{verbose}) {
         print STDERR "WARNING: $msg\n";
+    }
+}
+
+# Helper function to create LWP::UserAgent with consistent settings
+sub create_ua {
+    my ($timeout, $agent) = @_;
+    $timeout ||= HTTP_TIMEOUT_SHORT;
+    $agent ||= 'Mozilla/5.0 (compatible; WeatherBot/1.0; +https://github.com/w5gle/saytime-weather)';
+    
+    my $ua = LWP::UserAgent->new(timeout => $timeout);
+    $ua->agent($agent);
+    return $ua;
+}
+
+# Helper function to safely decode JSON with error handling
+sub safe_decode_json {
+    my ($content) = @_;
+    my $data = eval { decode_json($content) };
+    if ($@ || !$data) {
+        DEBUG("Failed to parse JSON response: $@") if $options{verbose};
+        return undef;
+    }
+    return $data;
+}
+
+# Helper function to build Nominatim URL with proper escaping
+sub build_nominatim_url {
+    my ($postal, $country) = @_;
+    my $escaped_postal = uri_escape($postal);
+    
+    if ($country && $country ne '') {
+        my $escaped_country = uri_escape($country);
+        return "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&country=$escaped_country&format=json&limit=1";
+    } else {
+        return "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&format=json&limit=1";
     }
 }
 
@@ -696,8 +719,7 @@ sub fetch_metar_weather {
     $icao = uc($icao);
     DEBUG("Fetching METAR for $icao") if $options{verbose};
     
-    my $ua = LWP::UserAgent->new(timeout => 15);
-    $ua->agent('Mozilla/5.0 (compatible; WeatherBot/1.0)');
+    my $ua = create_ua(HTTP_TIMEOUT_LONG, 'Mozilla/5.0 (compatible; WeatherBot/1.0)');
     
     # Try NOAA Aviation Weather API first
     # Escape ICAO code in URL (though it's already validated as 4 letters)
@@ -891,8 +913,7 @@ sub postal_to_coordinates {
         return ($lat, $lon);
     }
     
-    my $ua = LWP::UserAgent->new(timeout => 10);
-    $ua->agent('Mozilla/5.0 (compatible; WeatherBot/1.0; +https://github.com/w5gle/saytime-weather)');
+    my $ua = create_ua(HTTP_TIMEOUT_SHORT);
     
     # Comprehensive Canadian FSA to city mapping (Nominatim has poor Canadian postal code coverage)
     # FSA = Forward Sortation Area (first 3 characters of Canadian postal code)
@@ -980,16 +1001,8 @@ sub postal_to_coordinates {
         # 5 digits: Could be US, Germany, France, or other countries
         # Use configured default_country, fallback to US if not set
         $country = lc($config{default_country}) || 'us';
-        if ($country && $country ne '') {
-            # Escape user input in URL to prevent injection
-            my $escaped_postal = uri_escape($postal);
-            my $escaped_country = uri_escape($country);
-            $url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&country=$escaped_country&format=json&limit=1";
-            DEBUG("  Using default country: $country") if $options{verbose};
-        } else {
-            my $escaped_postal = uri_escape($postal);
-            $url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&format=json&limit=1";
-        }
+        $url = build_nominatim_url($postal, $country);
+        DEBUG("  Using default country: $country") if $options{verbose} && $country;
     } elsif ($postal =~ /^([A-Z]\d[A-Z])\s?\d[A-Z]\d$/i) {
         # Canadian: A1A 1A1 or A1A1A1
         $country = 'ca';
@@ -998,26 +1011,18 @@ sub postal_to_coordinates {
         my $normalized = uc($postal);
         $normalized =~ s/\s+//g;  # Remove any spaces
         $normalized =~ s/^([A-Z]\d[A-Z])(\d[A-Z]\d)$/$1 $2/;  # Add space in middle
-        # Escape user input in URL to prevent injection
-        my $escaped_postal = uri_escape($normalized);
-        my $escaped_country = uri_escape($country);
-        $url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&country=$escaped_country&format=json&limit=1";
+        $url = build_nominatim_url($normalized, $country);
     } else {
         # Other international codes
-        # Escape user input in URL to prevent injection
-        my $escaped_postal = uri_escape($postal);
-        $url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&format=json&limit=1";
+        $url = build_nominatim_url($postal, '');
     }
     
     DEBUG("  Trying URL: $url") if $options{verbose};
     
     my $response = $ua->get($url);
     if ($response->is_success) {
-        my $data = eval { decode_json($response->decoded_content) };
-        if ($@ || !$data) {
-            DEBUG("Failed to parse Nominatim response: $@") if $options{verbose};
-            return;
-        }
+        my $data = safe_decode_json($response->decoded_content);
+        return unless $data;
         
         if ($data && ref($data) eq 'ARRAY' && @$data > 0) {
             my $lat = $data->[0]->{lat};
@@ -1032,13 +1037,11 @@ sub postal_to_coordinates {
             # If country-specific search failed for 5-digit code, try international
             if ($country && $postal =~ /^\d{5}$/) {
                 DEBUG("  $country search failed, trying international for $postal") if $options{verbose};
-                # Escape user input in URL to prevent injection
-                my $escaped_postal = uri_escape($postal);
-                my $intl_url = "https://nominatim.openstreetmap.org/search?postalcode=$escaped_postal&format=json&limit=1";
-                sleep 1;  # Rate limit
+                my $intl_url = build_nominatim_url($postal, '');
+                sleep NOMINATIM_DELAY;  # Rate limit
                 $response = $ua->get($intl_url);
                 if ($response->is_success) {
-                    $data = eval { decode_json($response->decoded_content) };
+                    $data = safe_decode_json($response->decoded_content);
                     if ($data && ref($data) eq 'ARRAY' && @$data > 0) {
                         my $lat = $data->[0]->{lat};
                         my $lon = $data->[0]->{lon};
@@ -1076,10 +1079,10 @@ sub postal_to_coordinates {
                     # Escape city name in URL to prevent injection
                     my $escaped_city = uri_escape($city_name);
                     my $city_url = "https://nominatim.openstreetmap.org/search?q=$escaped_city&format=json&limit=1";
-                    sleep 1;  # Rate limit
+                    sleep NOMINATIM_DELAY;  # Rate limit
                     $response = $ua->get($city_url);
                     if ($response->is_success) {
-                        $data = eval { decode_json($response->decoded_content) };
+                        $data = safe_decode_json($response->decoded_content);
                         if ($data && ref($data) eq 'ARRAY' && @$data > 0) {
                             my $lat = $data->[0]->{lat};
                             my $lon = $data->[0]->{lon};
@@ -1096,7 +1099,7 @@ sub postal_to_coordinates {
     }
     
     # Add a small delay to respect Nominatim usage policy (max 1 request/second)
-    sleep 1;
+    sleep NOMINATIM_DELAY;
     
     return;
 }
@@ -1153,8 +1156,7 @@ sub fetch_weather_openmeteo {
     
     DEBUG("Fetching weather from Open-Meteo: lat=$lat, lon=$lon") if $options{verbose};
     
-    my $ua = LWP::UserAgent->new(timeout => 15);
-    $ua->agent('Mozilla/5.0 (compatible; WeatherBot/1.0)');
+    my $ua = create_ua(HTTP_TIMEOUT_LONG, 'Mozilla/5.0 (compatible; WeatherBot/1.0)');
     
     # Always request in Fahrenheit, convert to Celsius later if needed
     # Use 'current' parameter to get is_day field for day/night detection
@@ -1165,11 +1167,8 @@ sub fetch_weather_openmeteo {
     
     my $response = $ua->get($url);
     if ($response->is_success) {
-        my $data = eval { decode_json($response->decoded_content) };
-        if ($@ || !$data) {
-            DEBUG("Failed to parse Open-Meteo response: $@") if $options{verbose};
-            return;
-        }
+        my $data = safe_decode_json($response->decoded_content);
+        return unless $data;
         
         if ($data->{current}) {
             my $temp = $data->{current}->{temperature_2m};
@@ -1202,15 +1201,7 @@ sub fetch_weather_openmeteo {
     return;
 }
 
-# Add temperature validation function
-sub validate_temperature {
-    my ($temp) = @_;
-    my ($tmin, $tmax) = $config{Temperature_mode} eq "C" 
-        ? (-60, 60) 
-        : (-100, 150);
-    
-    return ($temp >= $tmin && $temp <= $tmax);
-}
+# Note: validate_temperature() removed as it was unused - validation is done inline where needed
 
 # Add signal handlers for cleanup
 $SIG{INT} = $SIG{TERM} = sub {

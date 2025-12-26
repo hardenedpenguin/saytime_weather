@@ -30,7 +30,8 @@ use constant {
     ASTERISK_BIN => "/usr/sbin/asterisk",
     DEFAULT_PLAY_METHOD => 'localplay',
     PLAY_DELAY => 5,
-    VERSION => '2.7.5',
+    VERSION => '2.7.6',
+    FILE_BUFFER_SIZE => 8192,  # Buffer size for file I/O operations
 };
 
 my %options = (
@@ -111,7 +112,7 @@ my $now = get_current_time($options{location_id});
 
 my $time_sound_files = process_time($now, $options{use_24hour});
 
-my $output_file = File::Spec->catfile(TMP_DIR, "current-time.ulaw");
+my $output_file = tmp_file("current-time.ulaw");
 my $final_sound_files = combine_sound_files($time_sound_files, $weather_sound_files);
 
 if ($options{dry_run}) {
@@ -169,36 +170,45 @@ sub validate_options {
     }
 }
 
+sub read_timezone_file {
+    my ($timezone_file) = @_;
+    return undef unless -f $timezone_file;
+    
+    my $timezone;
+    eval {
+        open my $tz_fh, '<', $timezone_file or die "Cannot open timezone file: $!";
+        chomp($timezone = <$tz_fh>);
+        close $tz_fh;
+    };
+    
+    if ($@) {
+        DEBUG("Failed to read timezone file: $@") if $options{verbose};
+        return undef;
+    }
+    
+    return $timezone if $timezone && $timezone ne '';
+    return undef;
+}
+
 sub get_current_time {
     my ($location_id) = @_;
     
     # Check if weather.pl saved a timezone file (from Open-Meteo)
     # This makes the time match the weather location
-    my $timezone_file = File::Spec->catfile(TMP_DIR, "timezone");
-    
-    if (defined $location_id && -f $timezone_file) {
-        my $timezone;
-        eval {
-            open my $tz_fh, '<', $timezone_file or die "Cannot open timezone file: $!";
-            chomp($timezone = <$tz_fh>);
-            close $tz_fh;
-        };
+    if (defined $location_id) {
+        my $timezone = read_timezone_file(tmp_file("timezone"));
         
-        if (!$@ && $timezone && $timezone ne '') {
+        if ($timezone) {
             DEBUG("Using timezone from weather location: $timezone") if $options{verbose};
             my $dt = DateTime->now;
-            my $tz_error;
             eval { $dt->set_time_zone($timezone); };
-            $tz_error = $@;
             
-            if ($tz_error) {
+            if ($@) {
                 DEBUG("Invalid timezone '$timezone', falling back to local") if $options{verbose};
             } else {
                 DEBUG("Current time in $timezone: " . $dt->hms) if $options{verbose};
-                return $dt;  # Return from function, not just eval
+                return $dt;
             }
-        } elsif ($@) {
-            DEBUG("Failed to read timezone file: $@") if $options{verbose};
         }
     }
     
@@ -291,8 +301,8 @@ sub process_weather {
     
     DEBUG("Fetching weather for location: $location_id") if $options{verbose};
 
-    my $temp_file_to_clean = File::Spec->catfile(TMP_DIR, "temperature");
-    my $weather_condition_file_to_clean = File::Spec->catfile(TMP_DIR, "condition.ulaw");
+    my $temp_file_to_clean = tmp_file("temperature");
+    my $weather_condition_file_to_clean = tmp_file("condition.ulaw");
     unlink $temp_file_to_clean if -e $temp_file_to_clean;
     unlink $weather_condition_file_to_clean if -e $weather_condition_file_to_clean;
     
@@ -318,8 +328,8 @@ sub process_weather {
         return "";
     }
     
-    my $temp_file = File::Spec->catfile(TMP_DIR, "temperature");
-    my $weather_condition_file = File::Spec->catfile(TMP_DIR, "condition.ulaw");
+    my $temp_file = tmp_file("temperature");
+    my $weather_condition_file = tmp_file("condition.ulaw");
     my $sound_dir = $options{custom_sound_dir} || BASE_SOUND_DIR;
     
     my $files = "";
@@ -435,7 +445,7 @@ sub create_output_file {
             next unless $file && $file =~ /\.ulaw$/;  # Only process .ulaw files
             
             # Validate file path is safe (no directory traversal)
-            if ($file =~ /\.\./ || $file =~ /^[\/]/ && $file !~ /^\/usr\/share\/asterisk\/sounds/ && $file !~ /^\/tmp\//) {
+            unless (is_safe_path($file)) {
                 WARN("Skipping potentially unsafe file path: $file");
                 next;
             }
@@ -447,7 +457,7 @@ sub create_output_file {
                 
                 # Copy file contents in chunks for efficiency
                 my $buffer;
-                while (read($in_fh, $buffer, 8192)) {
+                while (read($in_fh, $buffer, FILE_BUFFER_SIZE)) {
                     print $out_fh $buffer;
                 }
                 close $in_fh;
@@ -524,6 +534,20 @@ sub play_announcement {
     sleep PLAY_DELAY;
 }
 
+sub tmp_file {
+    my ($name) = @_;
+    return File::Spec->catfile(TMP_DIR, $name);
+}
+
+sub is_safe_path {
+    my ($file) = @_;
+    # Allow paths in expected directories, reject directory traversal
+    return 0 if $file =~ /\.\./;  # No directory traversal
+    return 1 if $file =~ /^\/usr\/share\/asterisk\/sounds/;  # Sound files
+    return 1 if $file =~ /^\/tmp\//;  # Temp files
+    return 0;  # Reject other absolute paths
+}
+
 sub cleanup_files {
     my ($file_to_delete, $weather_enabled, $silent) = @_;
     
@@ -535,18 +559,17 @@ sub cleanup_files {
     }
     
     if ($weather_enabled && ($silent == 1 || $silent == 2 || $silent == 0)) {
-        my $temp_file = File::Spec->catfile(TMP_DIR, "temperature");
-        my $cond_file = File::Spec->catfile(TMP_DIR, "condition.ulaw");
-        my $tz_file = File::Spec->catfile(TMP_DIR, "timezone");
+        my @weather_files = (
+            tmp_file("temperature"),
+            tmp_file("condition.ulaw"),
+            tmp_file("timezone")
+        );
         
         DEBUG("  Removing weather files:") if $options{verbose};
-        DEBUG("    - $temp_file") if $options{verbose};
-        DEBUG("    - $cond_file") if $options{verbose};
-        DEBUG("    - $tz_file") if $options{verbose};
-        
-        unlink $temp_file if -e $temp_file;
-        unlink $cond_file if -e $cond_file;
-        unlink $tz_file if -e $tz_file;
+        for my $file (@weather_files) {
+            DEBUG("    - $file") if $options{verbose};
+            unlink $file if -e $file;
+        }
     }
 }
 
