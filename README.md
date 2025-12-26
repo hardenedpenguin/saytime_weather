@@ -25,7 +25,7 @@ A time and weather announcement system for Asterisk PBX, designed for radio syst
 
 ```bash
 cd /tmp
-wget https://github.com/w5gle/saytime_weather/releases/download/v2.7.6/saytime-weather_2.7.6_all.deb
+wget https://github.com/hardenedpenguin/saytime_weather/releases/download/v2.7.6/saytime-weather_2.7.6_all.deb
 sudo apt install ./saytime-weather_2.7.6_all.deb
 ```
 
@@ -196,7 +196,7 @@ weather.pl 12345 v                 # Verbose text output
 4. Submit a pull request
 
 ```bash
-git clone https://github.com/w5gle/saytime_weather.git
+git clone https://github.com/hardenedpenguin/saytime_weather.git
 cd saytime_weather
 make test
 make install
@@ -210,8 +210,8 @@ Based on original work by D. Crompton, WA3DSP
 
 ## 🆘 Support
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/w5gle/saytime_weather/issues)
-- **Documentation**: Check the [Wiki](https://github.com/w5gle/saytime_weather/wiki)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/hardenedpenguin/saytime_weather/issues)
+- **Documentation**: Check the [Wiki](https://github.com/hardenedpenguin/saytime_weather/wiki)
 
 ## 🙏 Acknowledgments
 
