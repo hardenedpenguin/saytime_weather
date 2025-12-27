@@ -1,3 +1,21 @@
+saytime-weather (2.7.7) unstable; urgency=medium
+
+  * FEATURE: Added NWS (National Weather Service) API support
+    - New optional weather provider: nws (US locations only)
+    - Automatically falls back to Open-Meteo for non-US locations
+    - Official US government weather data for improved accuracy
+    - Configurable via weather_provider setting in weather.ini
+    - No API key required, free to use
+  * IMPROVEMENT: Enhanced configuration file generation
+    - Simplified config file to focus on settings and descriptions
+    - Removed examples and troubleshooting (moved to README)
+    - More concise and focused configuration documentation
+  * BUGFIX: Fixed incorrect GitHub URLs in README
+    - Updated all URLs from w5gle to hardenedpenguin repository
+    - Fixed download links, git clone URLs, and issue/wiki links
+
+ -- Jory A. Pratt <geekypenguin@gmail.com>  Sat, 14 Dec 2025 10:00:00 -0600
+
 saytime-weather (2.7.6) unstable; urgency=medium
 
   * IMPROVEMENT: Code simplification and refactoring

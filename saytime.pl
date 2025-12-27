@@ -30,7 +30,7 @@ use constant {
     ASTERISK_BIN => "/usr/sbin/asterisk",
     DEFAULT_PLAY_METHOD => 'localplay',
     PLAY_DELAY => 5,
-    VERSION => '2.7.6',
+    VERSION => '2.7.7',
     FILE_BUFFER_SIZE => 8192,  # Buffer size for file I/O operations
 };
 

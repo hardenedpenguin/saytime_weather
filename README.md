@@ -2,7 +2,7 @@
 
 A time and weather announcement system for Asterisk PBX, designed for radio systems, repeater controllers, and amateur radio applications. Provides automated voice announcements of current time and weather conditions.
 
-**Version 2.7.6** - Code simplification and improved maintainability.
+**Version 2.7.7** - Added NWS API support and improved configuration.
 
 ## 🚀 Features
 

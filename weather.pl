@@ -49,7 +49,7 @@ use constant {
     TEMP_FILE => "/tmp/temperature",
     COND_FILE => "/tmp/condition.ulaw",
     TIMEZONE_FILE => "/tmp/timezone",
-    VERSION => '2.7.6',
+    VERSION => '2.7.7',
     WEATHER_SOUND_DIR => "/usr/share/asterisk/sounds/en/wx",
     # HTTP client settings
     HTTP_TIMEOUT_SHORT => 10,  # For Nominatim (faster responses expected)
@@ -129,6 +129,7 @@ foreach my $config_file (@config_paths_to_try) {
 ; ============================================================================
 ; This file controls how weather data is fetched and announced.
 ; All settings have sensible defaults - no changes required to get started!
+; Command-line options override settings in this file for that run only.
 ; ============================================================================
 
 [weather]
@@ -138,9 +139,9 @@ foreach my $config_file (@config_paths_to_try) {
 ; ============================================================================
 
 ; Temperature display mode: F for Fahrenheit, C for Celsius
+; Affects both temperature file output and displayed text.
+; Valid values: F, C
 ; Default: F
-; Examples: Temperature_mode = F  (for 72°F)
-;           Temperature_mode = C  (for 22°C)
 Temperature_mode = F
 
 ; ============================================================================
@@ -148,7 +149,8 @@ Temperature_mode = F
 ; ============================================================================
 
 ; Process and announce weather conditions (cloudy, rain, clear, etc.)
-; Set to NO to only announce temperature
+; Set to NO to only announce temperature (no condition sound files).
+; Valid values: YES, NO
 ; Default: YES
 process_condition = YES
 
@@ -157,22 +159,22 @@ process_condition = YES
 ; ============================================================================
 
 ; Default country for ambiguous postal code lookups
-; Helps with 5-digit codes that could be multiple countries
-; Use ISO 3166-1 alpha-2 country codes: us, ca, de, fr, uk, etc.
-; Leave blank for international search (slower)
+; Helps with 5-digit codes that could be multiple countries (US, Germany, etc.)
+; Use ISO 3166-1 alpha-2 country codes: us, ca, de, fr, uk, jp, au, etc.
+; Leave blank for international search (slower, but more flexible).
+; Valid values: ISO country code or blank
 ; Default: us
-; Examples: default_country = us  (prioritize US ZIP codes)
-;           default_country = ca  (prioritize Canadian postal codes)
-;           default_country =     (search all countries)
 default_country = us
 
 ; ============================================================================
 ; WEATHER DATA SOURCE
 ; ============================================================================
 
-; Weather data provider (currently only openmeteo supported)
-; Open-Meteo is free, requires no API key, and provides worldwide coverage
-; This option is reserved for future providers
+; Weather data provider
+;   openmeteo: Free, no API key, worldwide coverage (default)
+;   nws:       Free, no API key, US locations only (official government data)
+;              Automatically falls back to openmeteo for non-US locations
+; Valid values: openmeteo, nws
 ; Default: openmeteo
 weather_provider = openmeteo
 
@@ -181,34 +183,21 @@ weather_provider = openmeteo
 ; ============================================================================
 
 ; Enable caching to reduce API calls and improve response time
+; Caching stores weather data locally to avoid repeated API calls.
 ; Recommended: YES (faster repeated lookups, reduces API load)
-; Set to NO only for testing or if you need real-time updates
+; Set to NO only for testing or if you need real-time updates every time.
+; Valid values: YES, NO
 ; Default: YES
 cache_enabled = YES
 
 ; Cache duration in seconds (how long to keep weather data)
+; After this time, cached data expires and fresh data is fetched.
+; Longer durations = fewer API calls but potentially stale data
+; Shorter durations = more API calls but fresher data
+; Valid values: Any positive integer (seconds)
 ; Default: 1800 (30 minutes)
-; Examples: cache_duration = 1800   (30 minutes, recommended)
-;           cache_duration = 3600   (1 hour)
-;           cache_duration = 900    (15 minutes)
-;           cache_duration = 300    (5 minutes, for testing)
 cache_duration = 1800
 
-; ============================================================================
-; USAGE EXAMPLES
-; ============================================================================
-; 
-; Test weather for your location:
-;   /usr/sbin/weather.pl YOUR_POSTAL_CODE v
-;
-; Examples:
-;   /usr/sbin/weather.pl 90210 v          (Beverly Hills, CA)
-;   /usr/sbin/weather.pl M5H2N2 v         (Toronto, ON)
-;   /usr/sbin/weather.pl 10115 v          (Berlin, Germany)
-;
-; Use with Asterisk:
-;   /usr/sbin/saytime.pl -l 90210 -n 1
-;
 ; ============================================================================
 EOT
             close $fh;
@@ -315,7 +304,9 @@ if (not defined $location || $location eq '') {
     print "\n";
     print "        Add 'v' as second parameter for display only, no sound files\n";
     print "\n";
-    print "Weather Provider: Open-Meteo (free, no API key, worldwide)\n";
+    print "Weather Providers:\n";
+    print "  - Open-Meteo (default): Free, no API key, worldwide coverage\n";
+    print "  - NWS: Free, no API key, US locations only (official government data)\n";
     print "Geocoding: Nominatim/OpenStreetMap (free, no API key)\n";
     print "\n";
     print "Edit /etc/asterisk/local/weather.ini to configure:\n";
@@ -399,17 +390,37 @@ if (not defined $current or $current eq "") {
     # Convert postal code to coordinates using Nominatim
     ($lat, $lon) = postal_to_coordinates($location);
     
-    # If we have coordinates, fetch weather from Open-Meteo
+    # If we have coordinates, fetch weather based on configured provider
     if (defined $lat && defined $lon) {
-        my ($temp, $cond, $tz) = fetch_weather_openmeteo($lat, $lon);
+        my ($temp, $cond, $tz);
+        my $provider = lc($config{weather_provider} || 'openmeteo');
+        
+        # Try configured provider first
+        if ($provider eq 'nws') {
+            DEBUG("Using NWS provider (US locations only)") if $options{verbose};
+            ($temp, $cond, $tz) = fetch_weather_nws($lat, $lon);
+            
+            # Fallback to Open-Meteo if NWS fails or location is non-US
+            if (!defined $temp || !defined $cond) {
+                DEBUG("NWS failed or non-US location, falling back to Open-Meteo") if $options{verbose};
+                ($temp, $cond, $tz) = fetch_weather_openmeteo($lat, $lon);
+                $provider = 'openmeteo';  # Update provider for cache
+            } else {
+                $w_type = 'nws';
+            }
+        } else {
+            # Default to Open-Meteo
+            ($temp, $cond, $tz) = fetch_weather_openmeteo($lat, $lon);
+            $provider = 'openmeteo';
+        }
         
         if (defined $temp && defined $cond) {
             $Temperature = sprintf("%.0f", $temp);  # Round to nearest degree
             $Condition = $cond;
             $current = "$Condition: $Temperature";
-            $w_type = "openmeteo";
+            $w_type = $provider unless $w_type;
             
-            DEBUG("Open-Meteo: $Temperature°, $Condition") if $options{verbose};
+            DEBUG("$provider: $Temperature°, $Condition") if $options{verbose};
             
             # Cache the data if enabled (including timezone)
             if ($config{cache_enabled} eq "YES" && defined $cache) {
@@ -420,17 +431,21 @@ if (not defined $current or $current eq "") {
                     timezone => $tz || ''
                 });
             }
+        } else {
+            my $provider_name = uc($provider);
+            ERROR("Failed to fetch weather data from $provider_name");
+            ERROR("  Location: $location");
+            ERROR("  Coordinates: lat=$lat, lon=$lon");
+            ERROR("  Hint: Check internet connectivity and API availability");
+            if ($provider eq 'nws') {
+                ERROR("  Note: NWS only supports US locations");
+            }
+        }
     } else {
-        ERROR("Failed to fetch weather data from Open-Meteo");
-        ERROR("  Location: $location");
-        ERROR("  Coordinates: lat=$lat, lon=$lon");
-        ERROR("  Hint: Check internet connectivity and API availability");
+        ERROR("Could not get coordinates for location: $location");
+        ERROR("  Hint: Verify the postal code or location name is correct");
+        ERROR("  For ICAO codes, ensure the airport code is valid (e.g., KJFK, EGLL)");
     }
-} else {
-    ERROR("Could not get coordinates for location: $location");
-    ERROR("  Hint: Verify the postal code or location name is correct");
-    ERROR("  For ICAO codes, ensure the airport code is valid (e.g., KJFK, EGLL)");
-}
     
     $w_type = "openmeteo" unless $w_type;
     }
@@ -620,7 +635,7 @@ sub show_usage {
     print "  - Temperature_mode: F/C (set to C for Celsius, F for Fahrenheit)\n";
     print "  - process_condition: YES/NO (default: YES)\n";
     print "  - default_country: ISO country code for postal lookups (default: us)\n";
-    print "  - weather_provider: Weather data source (default: openmeteo)\n";
+    print "  - weather_provider: openmeteo (worldwide) or nws (US only, default: openmeteo)\n";
     print "  - cache_enabled: YES/NO (default: YES)\n";
     print "  - cache_duration: Cache duration in seconds (default: 1800)\n\n";
     print "Note: Command line options override configuration file settings for that run.\n";
@@ -1201,6 +1216,133 @@ sub fetch_weather_openmeteo {
     return;
 }
 
+# Fetch weather from NWS API (free, no API key, US locations only)
+sub fetch_weather_nws {
+    my ($lat, $lon) = @_;
+    
+    # Rough validation: NWS API only supports US locations
+    # US approximate bounds: lat 18-72, lon -180 to -50 (west of -50 is Atlantic)
+    if ($lat < 18.0 || $lat > 72.0 || $lon < -180.0 || $lon > -50.0) {
+        DEBUG("NWS API only supports US locations (rough bounds check)") if $options{verbose};
+        return;
+    }
+    
+    DEBUG("Fetching weather from NWS: lat=$lat, lon=$lon") if $options{verbose};
+    
+    # NWS requires User-Agent with contact info
+    my $ua = create_ua(HTTP_TIMEOUT_LONG, 'WeatherBot/1.0 (saytime-weather@github.com)');
+    
+    # Step 1: Get grid points from coordinates
+    my $points_url = "https://api.weather.gov/points/$lat,$lon";
+    DEBUG("  Step 1: Getting grid points from $points_url") if $options{verbose};
+    
+    my $response = $ua->get($points_url);
+    if (!$response->is_success) {
+        DEBUG("NWS grid points request failed: " . $response->status_line) if $options{verbose};
+        return;
+    }
+    
+    my $points_data = safe_decode_json($response->decoded_content);
+    if (!$points_data || !$points_data->{properties}) {
+        DEBUG("NWS grid points response invalid or empty") if $options{verbose};
+        return;
+    }
+    
+    my $forecast_url = $points_data->{properties}->{forecast};
+    my $timezone = $points_data->{properties}->{timeZone} || '';
+    
+    if (!$forecast_url) {
+        DEBUG("NWS did not provide forecast URL") if $options{verbose};
+        return;
+    }
+    
+    DEBUG("  Step 2: Getting forecast from $forecast_url") if $options{verbose};
+    
+    # Step 2: Get current forecast
+    $response = $ua->get($forecast_url);
+    if (!$response->is_success) {
+        DEBUG("NWS forecast request failed: " . $response->status_line) if $options{verbose};
+        return;
+    }
+    
+    my $forecast_data = safe_decode_json($response->decoded_content);
+    if (!$forecast_data || !$forecast_data->{properties}) {
+        DEBUG("NWS forecast response invalid or empty") if $options{verbose};
+        return;
+    }
+    
+    # Parse NWS forecast structure
+    my $periods = $forecast_data->{properties}->{periods};
+    if (!$periods || @$periods == 0) {
+        DEBUG("NWS forecast has no periods") if $options{verbose};
+        return;
+    }
+    
+    # Get current period (first one is usually current/tonight)
+    my $current = $periods->[0];
+    my $temp = $current->{temperature};
+    my $condition_text = $current->{shortForecast} || $current->{detailedForecast} || '';
+    my $condition = parse_nws_condition($condition_text);
+    
+    DEBUG("  Temperature: $temp") if $options{verbose};
+    DEBUG("  Condition text: $condition_text") if $options{verbose};
+    DEBUG("  Parsed condition: $condition") if $options{verbose};
+    DEBUG("  Timezone: $timezone") if $options{verbose};
+    
+    # Save timezone to file so saytime.pl can use it
+    if ($timezone) {
+        eval {
+            open my $tz_fh, '>', TIMEZONE_FILE or die "Cannot open timezone file: $!";
+            print $tz_fh $timezone;
+            close $tz_fh;
+            DEBUG("  Saved timezone to " . TIMEZONE_FILE) if $options{verbose};
+        };
+        WARN("Failed to write timezone file: $@") if $@;
+    }
+    
+    return ($temp, $condition, $timezone);
+}
+
+# Parse NWS condition text to standardized condition format
+sub parse_nws_condition {
+    my ($text) = @_;
+    $text = lc($text || '');
+    
+    # Map NWS condition text to standardized condition format
+    # Order matters - check more specific patterns first
+    
+    # Thunderstorms
+    return 'Thunderstorm' if $text =~ /thunderstorm|thunder|t-storm/;
+    
+    # Precipitation intensity
+    return 'Heavy Rain' if $text =~ /heavy.*rain|rain.*heavy|torrential/;
+    return 'Heavy Snow' if $text =~ /heavy.*snow|snow.*heavy/;
+    return 'Light Rain' if $text =~ /light.*rain|rain.*light|drizzle/;
+    return 'Light Snow' if $text =~ /light.*snow|snow.*light|flurries/;
+    
+    # Precipitation types
+    return 'Rain' if $text =~ /\brain\b/;
+    return 'Snow' if $text =~ /\bsnow\b/;
+    return 'Sleet' if $text =~ /sleet|freezing.*rain|ice.*pellets/;
+    return 'Hail' if $text =~ /\bhail\b/;
+    
+    # Fog/Mist
+    return 'Foggy' if $text =~ /\bfog\b|\bmist\b/;
+    
+    # Cloud conditions (order matters - check overcast before partly)
+    return 'Overcast' if $text =~ /overcast|cloudy.*cloudy/;
+    return 'Cloudy' if $text =~ /\bcloudy\b/;
+    return 'Partly Cloudy' if $text =~ /partly.*cloud|partly.*sun|mostly.*cloud/;
+    return 'Mostly Sunny' if $text =~ /mostly.*sun|mostly.*clear/;
+    
+    # Clear conditions
+    return 'Sunny' if $text =~ /sunny|clear.*sun/;
+    return 'Clear' if $text =~ /clear/;
+    
+    # Default fallback
+    return 'Clear';
+}
+
 # Note: validate_temperature() removed as it was unused - validation is done inline where needed
 
 # Add signal handlers for cleanup
@@ -1218,6 +1360,11 @@ sub validate_config {
     if ($config{cache_duration} !~ /^\d+$/) {
         WARN("Invalid cache_duration: $config{cache_duration}, using default");
         $config{cache_duration} = 1800;
+    }
+    my $provider = lc($config{weather_provider} || 'openmeteo');
+    if ($provider ne 'openmeteo' && $provider ne 'nws') {
+        WARN("Invalid weather_provider: $config{weather_provider}, using default (openmeteo)");
+        $config{weather_provider} = 'openmeteo';
     }
 }
 
