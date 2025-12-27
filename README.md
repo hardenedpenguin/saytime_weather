@@ -11,7 +11,7 @@ A time and weather announcement system for Asterisk PBX, designed for radio syst
 - **No API Keys Required**: Works immediately after installation
 - **Day/Night Detection**: Intelligent conditions (never says "sunny" at 2 AM)
 - **Smart Caching**: 30-minute default cache for fast repeated lookups
-- **Free APIs**: Open-Meteo (weather) + Nominatim (geocoding)
+- **Free APIs**: Open-Meteo (worldwide) or NWS (US only) + Nominatim (geocoding)
 
 ## 📋 Requirements
 
@@ -25,8 +25,8 @@ A time and weather announcement system for Asterisk PBX, designed for radio syst
 
 ```bash
 cd /tmp
-wget https://github.com/hardenedpenguin/saytime_weather/releases/download/v2.7.6/saytime-weather_2.7.6_all.deb
-sudo apt install ./saytime-weather_2.7.6_all.deb
+wget https://github.com/hardenedpenguin/saytime_weather/releases/download/v2.7.7/saytime-weather_2.7.7_all.deb
+sudo apt install ./saytime-weather_2.7.7_all.deb
 ```
 
 This automatically installs dependencies, sets up directories, and creates configuration with sensible defaults.
@@ -40,9 +40,27 @@ Configuration is **optional** - the system works out of the box. Edit `/etc/aste
 Temperature_mode = F              # F or C
 default_country = us              # ISO country code (us, ca, de, fr, etc.)
 process_condition = YES           # YES or NO
+weather_provider = openmeteo      # openmeteo (worldwide) or nws (US only)
 cache_enabled = YES               # YES or NO
 cache_duration = 1800            # 30 minutes in seconds
 ```
+
+### 🔄 Upgrading from Previous Versions
+
+If you're upgrading and already have a `weather.ini` file, you may want to add the new `weather_provider` setting:
+
+**New in v2.7.7**: The `weather_provider` setting allows you to choose between:
+- **`openmeteo`** (default): Worldwide coverage, works for all locations
+- **`nws`**: US locations only, uses official National Weather Service data (more accurate for US)
+
+**Default behavior**: If `weather_provider` is not set in your existing config, it defaults to `openmeteo`, so your system will continue working exactly as before. No changes required!
+
+**To enable NWS for US locations**, add this line to your `weather.ini`:
+```ini
+weather_provider = nws
+```
+
+**Note**: NWS automatically falls back to Open-Meteo for non-US locations, so you can safely use `nws` even if you occasionally query international locations.
 
 ## 🎯 Usage
 
@@ -216,7 +234,8 @@ Based on original work by D. Crompton, WA3DSP
 ## 🙏 Acknowledgments
 
 - Original concept by D. Crompton, WA3DSP
-- Open-Meteo for free weather API (https://open-meteo.com)
+- Open-Meteo for free worldwide weather API (https://open-meteo.com)
+- National Weather Service for free US weather data (https://weather.gov)
 - OpenStreetMap Nominatim for free geocoding (https://nominatim.org)
 
 ---
